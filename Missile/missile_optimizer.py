@@ -1,4 +1,4 @@
-from Missile.missile_optimizer import mp
+from mpopt import mp
 import numpy as np
 import casadi as ca
 
@@ -19,7 +19,7 @@ GAS_RATIO = 0.30
 OBJECTIVE = "range"
 
 # 결과 plot 여부
-PLOT_RESULT = True
+PLOT_RESULT = False
 
 
 # ============================================================
@@ -523,7 +523,7 @@ def solve_one_model(model_name, gas_ratio, plot=True):
     print(f"Terminal velocity  : {xf[2]:.3f} m/s")
     print(f"Terminal gamma     : {np.degrees(xf[3]):.3f} deg")
     print(f"Final mass         : {xf[4]:.3f} kg")
-    print(f"Final time         : {t_data[-1]:.3f} s")
+    print(f"Final time         : {float(t_data[-1]):.3f} s")
     print("========================================================\n")
 
     return params, solution, post, x_data, u_data, t_data
