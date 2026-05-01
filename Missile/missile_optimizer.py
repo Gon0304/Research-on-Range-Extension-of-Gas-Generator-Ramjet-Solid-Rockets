@@ -18,8 +18,8 @@ GAS_RATIO = 0.30
 # "range" 또는 "range_terminal_velocity"
 OBJECTIVE = "range"
 
-# 결과 plot 여부
-PLOT_RESULT = False
+# 결과 plot 여부 (커스텀 플롯 표시 여부)
+PLOT_RESULT = True
 
 
 # ============================================================
@@ -45,7 +45,7 @@ MISSILE_DB = {
         "solid_burn_time": 28.0,        # s, 연구용 가정
         "max_altitude": 60000.0,        # m
         "max_velocity": 1800.0,         # m/s
-        "tf_min": 30.0,
+        "tf_min": 100.0,
         "tf_max": 350.0,
     },
 
@@ -63,7 +63,7 @@ MISSILE_DB = {
         "solid_burn_time": 32.0,
         "max_altitude": 60000.0,
         "max_velocity": 1800.0,
-        "tf_min": 30.0,
+        "tf_min": 100.0,
         "tf_max": 350.0,
     },
 
@@ -81,7 +81,7 @@ MISSILE_DB = {
         "solid_burn_time": 45.0,
         "max_altitude": 80000.0,
         "max_velocity": 2200.0,
-        "tf_min": 40.0,
+        "tf_min": 120.0,
         "tf_max": 600.0,
     },
 
@@ -99,7 +99,7 @@ MISSILE_DB = {
         "solid_burn_time": 25.0,
         "max_altitude": 40000.0,
         "max_velocity": 1700.0,
-        "tf_min": 20.0,
+        "tf_min": 80.0,
         "tf_max": 220.0,
     },
 }
@@ -398,10 +398,14 @@ def create_ocp(params):
     # 너무 낮은 속도 0에서 시작하면 gamma dynamics의 v 분모 때문에 solver가 어려워질 수 있음
     initial_gamma_deg = 45.0
 
+    # 초기 속도를 더 현실적으로 설정 (고체로켓 boost 후 진입 속도 가정)
+    v0_estimate = params["solid_thrust"] / params["m0"] * params["solid_burn_time"] / 1.8
+    v0_estimate = np.clip(v0_estimate, 500.0, 1200.0)
+    
     ocp.x00[0] = [
         0.0,                         # R0 [m]
         10.0,                        # h0 [m]
-        100.0,                       # v0 [m/s]
+        v0_estimate,                 # v0 [m/s] - 부스트 후 진입 속도
         np.radians(initial_gamma_deg),# gamma0 [rad]
         params["m0"],                # m0 [kg]
     ]
@@ -414,7 +418,7 @@ def create_ocp(params):
         0.0,
         0.0,
         10.0,
-        np.radians(-80.0),
+        np.radians(-45.0),  # 더 제한된 gamma 범위
         params["dry_mass"],
     ]
 
@@ -422,7 +426,7 @@ def create_ocp(params):
         max(3.0 * params["public_range"], 200e3),
         params["max_altitude"],
         params["max_velocity"],
-        np.radians(80.0),
+        np.radians(60.0),   # 더 제한된 gamma 범위
         params["m0"],
     ]
 
@@ -526,17 +530,148 @@ def solve_one_model(model_name, gas_ratio, plot=True):
     print(f"Final time         : {float(t_data[-1]):.3f} s")
     print("========================================================\n")
 
+    # ===============================
+    # Trajectory Summary 추가
+    # ===============================
+    R = x_data[:, 0]
+    h = x_data[:, 1]
+    V = x_data[:, 2]
+    gamma = x_data[:, 3]
+    m = x_data[:, 4]
+
+    alpha = u_data[:, 0]
+    throttle = u_data[:, 1]
+
+    print("\n========== Trajectory Summary ==========")
+    print(f"Final time              : {float(t_data[-1]):.3f} s")
+    print(f"Final range             : {R[-1] / 1000:.3f} km")
+    print(f"Max altitude            : {np.max(h) / 1000:.3f} km")
+    print(f"Terminal altitude       : {h[-1]:.3f} m")
+    print(f"Initial velocity        : {V[0]:.3f} m/s")
+    print(f"Max velocity            : {np.max(V):.3f} m/s")
+    print(f"Terminal velocity       : {V[-1]:.3f} m/s")
+    print(f"Initial mass            : {m[0]:.3f} kg")
+    print(f"Final mass              : {m[-1]:.3f} kg")
+    print(f"Min gamma               : {np.degrees(np.min(gamma)):.3f} deg")
+    print(f"Max gamma               : {np.degrees(np.max(gamma)):.3f} deg")
+    print(f"Min alpha               : {np.degrees(np.min(alpha)):.3f} deg")
+    print(f"Max alpha               : {np.degrees(np.max(alpha)):.3f} deg")
+    print(f"Min throttle            : {np.min(throttle):.3f}")
+    print(f"Max throttle            : {np.max(throttle):.3f}")
+    print("========================================\n")
+
     return params, solution, post, x_data, u_data, t_data
+
+
+def plot_trajectory_results(x_data, u_data, t_data, save_path=None):
+    """
+    궤적 결과를 더 보기 좋게 시각화.
+    save_path: 플롯을 저장할 경로 (None이면 저장 안 함)
+    """
+    import matplotlib.pyplot as plt
+    
+    R = x_data[:, 0]
+    h = x_data[:, 1]
+    V = x_data[:, 2]
+    gamma = x_data[:, 3]
+    m = x_data[:, 4]
+
+    alpha = u_data[:, 0]
+    throttle = u_data[:, 1]
+
+    # Plot 1: 3D Trajectory (Range vs Altitude)
+    plt.figure(figsize=(12, 5))
+    plt.plot(R / 1000, h / 1000, "o-", linewidth=2, markersize=4)
+    plt.xlabel("Downrange [km]", fontsize=11)
+    plt.ylabel("Altitude [km]", fontsize=11)
+    plt.title("Missile Trajectory", fontsize=12, fontweight='bold')
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    if save_path:
+        plt.savefig(f"{save_path}_01_trajectory.png", dpi=150, bbox_inches='tight')
+        print(f"Saved: {save_path}_01_trajectory.png")
+    plt.show()
+
+    # Plot 2: Velocity History
+    plt.figure(figsize=(12, 5))
+    plt.plot(t_data, V, "o-", linewidth=2, markersize=4, color='tab:orange')
+    plt.xlabel("Time [s]", fontsize=11)
+    plt.ylabel("Velocity [m/s]", fontsize=11)
+    plt.title("Velocity History", fontsize=12, fontweight='bold')
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    if save_path:
+        plt.savefig(f"{save_path}_02_velocity.png", dpi=150, bbox_inches='tight')
+        print(f"Saved: {save_path}_02_velocity.png")
+    plt.show()
+
+    # Plot 3: Mass History
+    plt.figure(figsize=(12, 5))
+    plt.plot(t_data, m, "o-", linewidth=2, markersize=4, color='tab:green')
+    plt.xlabel("Time [s]", fontsize=11)
+    plt.ylabel("Mass [kg]", fontsize=11)
+    plt.title("Mass History", fontsize=12, fontweight='bold')
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    if save_path:
+        plt.savefig(f"{save_path}_03_mass.png", dpi=150, bbox_inches='tight')
+        print(f"Saved: {save_path}_03_mass.png")
+    plt.show()
+
+    # Plot 4: Flight Path Angle and Control Angle
+    plt.figure(figsize=(12, 5))
+    plt.plot(t_data, np.degrees(gamma), "o-", linewidth=2, markersize=4, label="Flight Path Angle (γ)")
+    plt.plot(t_data, np.degrees(alpha), "s-", linewidth=2, markersize=4, label="Angle of Attack (α)")
+    plt.xlabel("Time [s]", fontsize=11)
+    plt.ylabel("Angle [deg]", fontsize=11)
+    plt.title("Flight Path Angle and Control Angle", fontsize=12, fontweight='bold')
+    plt.legend(fontsize=10)
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    if save_path:
+        plt.savefig(f"{save_path}_04_angles.png", dpi=150, bbox_inches='tight')
+        print(f"Saved: {save_path}_04_angles.png")
+    plt.show()
+
+    # Plot 5: Throttle History
+    plt.figure(figsize=(12, 5))
+    plt.plot(t_data, throttle, "o-", linewidth=2, markersize=4, color='tab:red')
+    plt.xlabel("Time [s]", fontsize=11)
+    plt.ylabel("Throttle", fontsize=11)
+    plt.title("Throttle History", fontsize=12, fontweight='bold')
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    if save_path:
+        plt.savefig(f"{save_path}_05_throttle.png", dpi=150, bbox_inches='tight')
+        print(f"Saved: {save_path}_05_throttle.png")
+    plt.show()
+
+    return None
 
 
 # ============================================================
 # 8. 실행
 # ============================================================
 if __name__ == "__main__":
+    import datetime
+    
     params, solution, post, x_data, u_data, t_data = solve_one_model(
         MODEL_NAME,
         GAS_RATIO,
         plot=PLOT_RESULT
     )
 
+    # 커스텀 플롯 표시 및 저장 (PLOT_RESULT가 True일 때)
+    if PLOT_RESULT:
+        # 결과 저장 경로
+        save_dir = "results"
+        import os
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+        
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        save_path = os.path.join(save_dir, f"trajectory_{MODEL_NAME}_{GAS_RATIO:.2f}_{timestamp}")
+        
+        plot_trajectory_results(x_data, u_data, t_data, save_path=save_path)
+    
     mp.plt.show()
