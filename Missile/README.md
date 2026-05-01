@@ -115,22 +115,35 @@ solid_ratio = 1 - gas_ratio
 ### plot 4: Flight Path Angle and Control Angle(비행경로각 및 제어각)
 <img width="1786" height="734" alt="image" src="https://github.com/user-attachments/assets/0949f4d9-b317-484a-952b-b47eeaed977a" />
 
-- X축: 시간 (0~100초)
-- Y축: 각도 (도, degrees)
+- **X-axis:** Time [s]  
+- **Y-axis:** Angle [deg]
 
-- 파란선 (γ = Flight Path Angle, 비행경로각):
+#### Blue Line: γ = Flight Path Angle
 
-  0~3초: 급변 (+10°→+60°) - 부스트 단계 불안정
-  40~50초: 급격히 하강 - 최고점 통과 후 재진입
-  50~90초: -40° 안정화 - 하강 단계 (수직선에서 40도 아래)
-  90~100초: -40° → -12° 상승 - 지면 접근
-  
-- 주황선 (α = Angle of Attack, 공격각/조종각):
+`γ`는 미사일의 비행 방향이 수평선과 이루는 각도를 의미한다.
 
-  범위: -5° ~ +5° (제어 한계 내)
-  초기 불안정 후 대부분 거의 0° 유지
-  90~100초: 약간 양수로 상승 (재진입 안정화)
-  의미: 조종 입력이 매우 작음 = 최적 경로
+| Time [s] | Trend | Interpretation |
+|---:|---|---|
+| 0~3 | +10° → +60°로 급격히 증가 | 초기 부스트 단계에서 빠르게 상승각 형성 |
+| 3~40 | 약 +50°~+60° 유지 | 상승 단계, 거의 수직에 가까운 고각 상승 |
+| 40~50 | 급격히 감소 | 최고점 통과 후 하강 궤적으로 전환 |
+| 50~90 | 약 -40° 부근 유지 | 하강 단계에서 안정적인 재진입 궤적 형성 |
+| 90~100 | -40° → -12°로 증가 | 지면 접근 시 하강각 완화 |
+
+#### Orange Line: α = Angle of Attack
+
+`α`는 미사일의 공격각 또는 궤적 제어 입력을 의미한다.
+
+| Item | Description |
+|---|---|
+| Control range | 약 -5° ~ +5° |
+| Initial behavior | 초기 구간에서 작은 진동 발생 |
+| Main flight phase | 대부분 0° 근처 유지 |
+| Terminal phase | 90~100초 구간에서 약간 양수 방향으로 증가 |
+| Interpretation | 제어 입력이 작게 유지되므로, 현재 모델에서는 큰 자세 변화 없이 궤적을 형성하는 것으로 해석 가능 |
+
+> 현재 결과에서 `γ`는 상승, 최고점 통과, 하강 단계의 전형적인 비행경로각 변화를 보여준다.  
+> 반면 `α`는 제어 한계 내에서 대부분 작은 값을 유지하므로, 최적화 과정에서 비교적 작은 조종 입력으로 궤적을 구성한 것으로 볼 수 있다.
 
 ### plot 5: Throttle History (스로틀/추력 제어 이력)
 <img width="1786" height="734" alt="image" src="https://github.com/user-attachments/assets/35ff6306-a46f-45c0-87b5-b5eab9b843d3" />
