@@ -1,5 +1,8 @@
 # 가스발생기 램제트 고체로켓 사거리 증진 연구
 
+<img width="780" height="609" alt="image" src="https://github.com/user-attachments/assets/75a97fd7-f4fa-4dee-b33f-d7dca19515cd" />
+
+
 ## 1. 연구 개요
 
 본 프로젝트는 **가스발생기 램제트 고체로켓**의 비행 성능을 예측하기 위한 개념 연구이다.  
