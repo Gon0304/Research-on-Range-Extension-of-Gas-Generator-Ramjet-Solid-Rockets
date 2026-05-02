@@ -73,7 +73,8 @@ solid_ratio = 1 - gas_ratio
 ## ATACMS plot
 
 ### plot 1: Missile Trajectory (미사일 궤적)
-<img width="1786" height="734" alt="image" src="https://github.com/user-attachments/assets/c5b21b92-158b-404b-94dc-a5465320dde8" />
+<img width="1786" height="734" alt="image" src="https://github.com/user-attachments/assets/efceefb8-876e-4320-91ac-27b2caab89a4" />
+
 
 - X축: 수평 거리 (Downrange, km)
 - Y축: 고도 (Altitude, km)
@@ -86,7 +87,8 @@ solid_ratio = 1 - gas_ratio
   - 형태: 이상적인 포물선 미사일 궤적
 
 ### plot 2: Velocity History (속도 이력)
-<img width="1786" height="734" alt="image" src="https://github.com/user-attachments/assets/d2aae4cb-b981-4b2b-9308-1e4bcf53e399" />
+<img width="1786" height="734" alt="image" src="https://github.com/user-attachments/assets/47553e1f-bbe4-49f7-bfcc-f16959aef966" />
+
 
 - X축: 시간 (0~100초)
 - Y축: 미사일 속도 (m/s)
@@ -98,7 +100,8 @@ solid_ratio = 1 - gas_ratio
   - 100초: 종말 속도 619 m/s
 
 ### plot 3: Mass History (질량 이력)
-<img width="1786" height="734" alt="image" src="https://github.com/user-attachments/assets/2d9d8488-45e2-4238-aeda-aaf94e7524f8" />
+<img width="1786" height="734" alt="image" src="https://github.com/user-attachments/assets/926c8cc0-cc25-485c-a6b6-c989283d3ac0" />
+
 
 - X축: 시간 (0~100초)
 - Y축: 미사일 질량 (kg)
@@ -113,7 +116,8 @@ solid_ratio = 1 - gas_ratio
   - 100초: 최종 질량 900.659 kg
 
 ### plot 4: Flight Path Angle and Control Angle(비행경로각 및 제어각)
-<img width="1786" height="734" alt="image" src="https://github.com/user-attachments/assets/0949f4d9-b317-484a-952b-b47eeaed977a" />
+<img width="1786" height="734" alt="image" src="https://github.com/user-attachments/assets/fe8b96fa-eb24-4c48-8c46-f9911232d5f2" />
+
 
 - **X-axis:** Time [s]  
 - **Y-axis:** Angle [deg]
@@ -146,7 +150,8 @@ solid_ratio = 1 - gas_ratio
 > 반면 `α`는 제어 한계 내에서 대부분 작은 값을 유지하므로, 최적화 과정에서 비교적 작은 조종 입력으로 궤적을 구성한 것으로 볼 수 있다.
 
 ### plot 5: Throttle History (스로틀/추력 제어 이력)
-<img width="1786" height="734" alt="image" src="https://github.com/user-attachments/assets/35ff6306-a46f-45c0-87b5-b5eab9b843d3" />
+<img width="1786" height="734" alt="image" src="https://github.com/user-attachments/assets/d31b1e42-97c8-42d8-8779-8b53e392d332" />
+
 
 - X축: 시간 (0~100초)
 - Y축: 스로틀 값 (0~1, 정규화된 값)
