@@ -7,7 +7,7 @@ import casadi as ca
 # ============================================================
 # 선택 가능:
 # "ATACMS", "LORA", "HYUNMOO_2B", "TOCHKA"
-MODEL_NAME = "ATACMS"
+MODEL_NAME = "TOCHKA"
 
 # 가스화연료 비율
 # 0.0이면 기존 고체로켓-only baseline에 가까움
@@ -494,7 +494,7 @@ def solve_one_model(model_name, gas_ratio, plot=True):
     ocp = create_ocp(params)
 
     # 기존 코드와 동일하게 mpopt solver 사용
-    n_segments = 40
+    n_segments = 20  # 최적화 속도 개선: 40 → 20
     poly_orders = [3] * n_segments
 
     mpo = mp.mpopt(
@@ -527,7 +527,7 @@ def solve_one_model(model_name, gas_ratio, plot=True):
     print(f"Terminal velocity  : {xf[2]:.3f} m/s")
     print(f"Terminal gamma     : {np.degrees(xf[3]):.3f} deg")
     print(f"Final mass         : {xf[4]:.3f} kg")
-    print(f"Final time         : {float(t_data[-1]):.3f} s")
+    print(f"Final time         : {np.asarray(t_data[-1]).item():.3f} s")
     print("========================================================\n")
 
     # ===============================
@@ -543,7 +543,7 @@ def solve_one_model(model_name, gas_ratio, plot=True):
     throttle = u_data[:, 1]
 
     print("\n========== Trajectory Summary ==========")
-    print(f"Final time              : {float(t_data[-1]):.3f} s")
+    print(f"Final time              : {np.asarray(t_data[-1]).item():.3f} s")
     print(f"Final range             : {R[-1] / 1000:.3f} km")
     print(f"Max altitude            : {np.max(h) / 1000:.3f} km")
     print(f"Terminal altitude       : {h[-1]:.3f} m")
@@ -664,7 +664,7 @@ if __name__ == "__main__":
     # 커스텀 플롯 표시 및 저장 (PLOT_RESULT가 True일 때)
     if PLOT_RESULT:
         # 결과 저장 경로
-        save_dir = "results"
+        save_dir = "TOCHKA_Plot"
         import os
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
