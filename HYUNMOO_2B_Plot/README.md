@@ -1,279 +1,132 @@
-Testing with Fuel: HYDROGEN
-============================================================
+## Fuel Comparison Simulation Result
 
-============================================================
-Selected Model : Hyunmoo-2B-class SRBM
-Propulsion     : two-stage solid
-Fuel Type      : hydrogen
-Length         : 12.000 m
-Diameter       : 0.900 m
-Launch mass    : 5400.0 kg
-Dry mass       : 2268.0 kg
-Prop mass      : 3132.0 kg
-Solid ratio    : 0.70
-Gas ratio      : 0.30
-Area           : 0.6362 m^2
-Solid thrust   : 119445.0 N
-Ramjet T_ref   : 36789.1 N
-Ramjet LHV     : 120.00 MJ/kg
-Ramjet Isp     : 4229.5 s
-============================================================
+This section summarizes the trajectory optimization results obtained using `mpopt` for different ramjet fuel types.
 
+The simulation compares four fuel candidates:
 
- *********** MPOPT Summary ********** 
+- Hydrogen
+- Methane
+- Ethylene
+- Kerosene
 
-CasADi - 2026-05-10 17:13:05 WARNING("The options 't0', 'tf', 'grid' and 'output_t0' have been deprecated.
-The same functionality is provided by providing additional input arguments to the 'integrator' function, in particular:
- * Call integrator(..., t0, tf, options) for a single output time, or
- * Call integrator(..., t0, grid, options) for multiple grid points.
-The legacy 'output_t0' option can be emulated by including or excluding 't0' in 'grid'.
-Backwards compatibility is provided in this release only.") [.../casadi/core/integrator.cpp:698]
-CasADi - 2026-05-10 17:13:05 WARNING("solver:nlp_jac_g failed: NaN detected for output jac_g_x, at nonzero index 668 (row 182, col 121).") [.../casadi/core/oracle_function.cpp:408]
-CasADi - 2026-05-10 17:13:05 WARNING("solver:nlp_jac_g failed: NaN detected for output jac_g_x, at nonzero index 668 (row 182, col 121).") [.../casadi/core/oracle_function.cpp:408]
- Optimal cost (J):  -96658.3 
+All cases use the same reference vehicle model and the same gas-generator ratio.
 
- Solved in 1489.373 ms
-         OCP transcription time  : 358.592 ms
-         NLP solution time       : 1130.781 ms
+---
 
- Post processed in 142.553 ms
-         Solution retrieval            : 0.224 ms
-         Process solution and plot      : 142.328 ms
+## Simulation Model
 
-==================== Result Summary ====================
-Model              : Hyunmoo-2B-class SRBM
-Fuel Type          : hydrogen
-Gas ratio          : 0.30
-Final range        : 96.690 km
-Final altitude     : 0.000 m
-Terminal velocity  : 449.976 m/s
-Terminal gamma     : -10.000 deg
-Final mass         : 3143.061 kg
-Final time         : 120.000 s
-========================================================
+| Parameter | Value |
+|---|---:|
+| Selected Model | Hyunmoo-2B-class SRBM |
+| Propulsion Type | Two-stage solid + ramjet |
+| Vehicle Length | 12.000 m |
+| Vehicle Diameter | 0.900 m |
+| Launch Mass | 5400.0 kg |
+| Dry Mass | 2268.0 kg |
+| Propellant Mass | 3132.0 kg |
+| Solid Fuel Ratio | 0.70 |
+| Gas Generator Ratio | 0.30 |
+| Reference Area | 0.6362 m² |
+| Solid Thrust | 119445.0 N |
+| Ramjet Reference Thrust | 36789.1 N |
+| Final Time | 120.000 s |
 
+---
 
-========== Trajectory Summary ==========
-Final time              : 120.000 s
-Final range             : 96.690 km
-Max altitude            : 8.017 km
-Terminal altitude       : 0.000 m
-Initial velocity        : 552.986 m/s
-Max velocity            : 1143.694 m/s
-Terminal velocity       : 449.976 m/s
-Initial mass            : 5400.000 kg
-Final mass              : 3143.061 kg
-Min gamma               : -10.000 deg
-Max gamma               : 30.000 deg
-Min alpha               : -2.000 deg
-Max alpha               : 2.000 deg
-Min throttle            : 0.240
-Max throttle            : 1.000
-========================================
+## Fuel Property Comparison
 
+| Fuel Type | LHV [MJ/kg] | Ramjet Isp [s] |
+|---|---:|---:|
+| Hydrogen | 120.00 | 4229.5 |
+| Methane | 50.00 | 2730.1 |
+| Ethylene | 47.00 | 2646.9 |
+| Kerosene | 43.00 | 2531.8 |
 
-============================================================
-Testing with Fuel: METHANE
-============================================================
+---
 
-============================================================
-Selected Model : Hyunmoo-2B-class SRBM
-Propulsion     : two-stage solid
-Fuel Type      : methane
-Length         : 12.000 m
-Diameter       : 0.900 m
-Launch mass    : 5400.0 kg
-Dry mass       : 2268.0 kg
-Prop mass      : 3132.0 kg
-Solid ratio    : 0.70
-Gas ratio      : 0.30
-Area           : 0.6362 m^2
-Solid thrust   : 119445.0 N
-Ramjet T_ref   : 36789.1 N
-Ramjet LHV     : 50.00 MJ/kg
-Ramjet Isp     : 2730.1 s
-============================================================
+## Result Summary
 
+| Fuel Type | Final Range [km] | Terminal Velocity [m/s] | Max Altitude [km] | Final Mass [kg] |
+|---|---:|---:|---:|---:|
+| Hydrogen | 96.690 | 449.976 | 8.017 | 3143.061 |
+| Methane | 93.637 | 416.962 | 7.710 | 3135.267 |
+| Ethylene | 93.220 | 412.489 | 7.731 | 3136.060 |
+| Kerosene | 92.740 | 407.149 | 7.809 | 3137.042 |
 
- *********** MPOPT Summary ********** 
+---
 
-CasADi - 2026-05-10 17:13:14 WARNING("solver:nlp_jac_g failed: NaN detected for output jac_g_x, at nonzero index 668 (row 182, col 121).") [.../casadi/core/oracle_function.cpp:408]
-CasADi - 2026-05-10 17:13:14 WARNING("solver:nlp_jac_g failed: NaN detected for output jac_g_x, at nonzero index 668 (row 182, col 121).") [.../casadi/core/oracle_function.cpp:408]
- Optimal cost (J):  -93607.6 
+## Detailed Trajectory Summary
 
- Solved in 1367.533 ms
-         OCP transcription time  : 163.88 ms
-         NLP solution time       : 1203.653 ms
+| Fuel Type | Initial Velocity [m/s] | Max Velocity [m/s] | Terminal Velocity [m/s] | Min Gamma [deg] | Max Gamma [deg] | Min Alpha [deg] | Max Alpha [deg] | Min Throttle | Max Throttle |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Hydrogen | 552.986 | 1143.694 | 449.976 | -10.000 | 30.000 | -2.000 | 2.000 | 0.240 | 1.000 |
+| Methane | 552.986 | 1137.975 | 416.962 | -10.000 | 30.000 | -2.000 | 2.000 | 0.240 | 1.000 |
+| Ethylene | 552.986 | 1138.140 | 412.489 | -10.000 | 30.000 | -2.000 | 2.000 | 0.240 | 1.000 |
+| Kerosene | 552.986 | 1139.073 | 407.149 | -10.000 | 30.000 | -2.000 | 2.000 | 0.240 | 1.000 |
 
- Post processed in 34.387 ms
-         Solution retrieval            : 0.227 ms
-         Process solution and plot      : 34.159 ms
+---
 
-==================== Result Summary ====================
-Model              : Hyunmoo-2B-class SRBM
-Fuel Type          : methane
-Gas ratio          : 0.30
-Final range        : 93.637 km
-Final altitude     : 0.000 m
-Terminal velocity  : 416.962 m/s
-Terminal gamma     : -10.000 deg
-Final mass         : 3135.267 kg
-Final time         : 120.000 s
-========================================================
+## Performance Ranking
 
+### Final Range
 
-========== Trajectory Summary ==========
-Final time              : 120.000 s
-Final range             : 93.637 km
-Max altitude            : 7.710 km
-Terminal altitude       : 0.000 m
-Initial velocity        : 552.986 m/s
-Max velocity            : 1137.975 m/s
-Terminal velocity       : 416.962 m/s
-Initial mass            : 5400.000 kg
-Final mass              : 3135.267 kg
-Min gamma               : -10.000 deg
-Max gamma               : 30.000 deg
-Min alpha               : -2.000 deg
-Max alpha               : 2.000 deg
-Min throttle            : 0.240
-Max throttle            : 1.000
-========================================
+| Rank | Fuel Type | Final Range [km] |
+|---:|---|---:|
+| 1 | Hydrogen | 96.690 |
+| 2 | Methane | 93.637 |
+| 3 | Ethylene | 93.220 |
+| 4 | Kerosene | 92.740 |
 
+### Terminal Velocity
 
-============================================================
-Testing with Fuel: ETHYLENE
-============================================================
+| Rank | Fuel Type | Terminal Velocity [m/s] |
+|---:|---|---:|
+| 1 | Hydrogen | 449.976 |
+| 2 | Methane | 416.962 |
+| 3 | Ethylene | 412.489 |
+| 4 | Kerosene | 407.149 |
 
-============================================================
-Selected Model : Hyunmoo-2B-class SRBM
-Propulsion     : two-stage solid
-Fuel Type      : ethylene
-Length         : 12.000 m
-Diameter       : 0.900 m
-Launch mass    : 5400.0 kg
-Dry mass       : 2268.0 kg
-Prop mass      : 3132.0 kg
-Solid ratio    : 0.70
-Gas ratio      : 0.30
-Area           : 0.6362 m^2
-Solid thrust   : 119445.0 N
-Ramjet T_ref   : 36789.1 N
-Ramjet LHV     : 47.00 MJ/kg
-Ramjet Isp     : 2646.9 s
-============================================================
+---
 
+## Interpretation
 
- *********** MPOPT Summary ********** 
+The hydrogen case produced the highest final range and terminal velocity among the tested fuel types.
 
-CasADi - 2026-05-10 17:13:20 WARNING("solver:nlp_jac_g failed: NaN detected for output jac_g_x, at nonzero index 668 (row 182, col 121).") [.../casadi/core/oracle_function.cpp:408]
-CasADi - 2026-05-10 17:13:20 WARNING("solver:nlp_jac_g failed: NaN detected for output jac_g_x, at nonzero index 668 (row 182, col 121).") [.../casadi/core/oracle_function.cpp:408]
- Optimal cost (J):  -93191.5 
+Compared with kerosene, hydrogen showed:
 
- Solved in 1370.463 ms
-         OCP transcription time  : 161.544 ms
-         NLP solution time       : 1208.919 ms
+- Higher final range
+- Higher terminal velocity
+- Higher maximum altitude
+- Higher ramjet specific impulse
 
- Post processed in 34.303 ms
-         Solution retrieval            : 0.224 ms
-         Process solution and plot      : 34.074 ms
+This result is mainly related to the higher lower heating value and ramjet specific impulse of hydrogen.
 
-==================== Result Summary ====================
-Model              : Hyunmoo-2B-class SRBM
-Fuel Type          : ethylene
-Gas ratio          : 0.30
-Final range        : 93.220 km
-Final altitude     : 0.000 m
-Terminal velocity  : 412.489 m/s
-Terminal gamma     : -10.000 deg
-Final mass         : 3136.060 kg
-Final time         : 120.000 s
-========================================================
+However, the current result should be interpreted as a trajectory optimization result under the same vehicle configuration and gas-generator ratio. Additional analysis is required to evaluate practical design factors such as fuel storage, system mass, volume constraints, and implementation complexity.
 
+---
 
-========== Trajectory Summary ==========
-Final time              : 120.000 s
-Final range             : 93.220 km
-Max altitude            : 7.731 km
-Terminal altitude       : 0.000 m
-Initial velocity        : 552.986 m/s
-Max velocity            : 1138.140 m/s
-Terminal velocity       : 412.489 m/s
-Initial mass            : 5400.000 kg
-Final mass              : 3136.060 kg
-Min gamma               : -10.000 deg
-Max gamma               : 30.000 deg
-Min alpha               : -2.000 deg
-Max alpha               : 2.000 deg
-Min throttle            : 0.240
-Max throttle            : 1.000
-========================================
+## Solver Information
 
+The optimization was solved using `mpopt` and `CasADi`.
 
-============================================================
-Testing with Fuel: KEROSENE
-============================================================
+During the optimization process, CasADi generated warnings related to `NaN` detection in the NLP Jacobian calculation. However, the solver returned feasible optimized results for all tested fuel types.
 
-============================================================
-Selected Model : Hyunmoo-2B-class SRBM
-Propulsion     : two-stage solid
-Fuel Type      : kerosene
-Length         : 12.000 m
-Diameter       : 0.900 m
-Launch mass    : 5400.0 kg
-Dry mass       : 2268.0 kg
-Prop mass      : 3132.0 kg
-Solid ratio    : 0.70
-Gas ratio      : 0.30
-Area           : 0.6362 m^2
-Solid thrust   : 119445.0 N
-Ramjet T_ref   : 36789.1 N
-Ramjet LHV     : 43.00 MJ/kg
-Ramjet Isp     : 2531.8 s
-============================================================
+Typical solver time was approximately:
 
+| Fuel Type | Total Solve Time [ms] |
+|---|---:|
+| Hydrogen | 1489.373 |
+| Methane | 1367.533 |
+| Ethylene | 1370.463 |
+| Kerosene | 1353.384 |
 
- *********** MPOPT Summary ********** 
+---
 
-CasADi - 2026-05-10 17:13:26 WARNING("solver:nlp_jac_g failed: NaN detected for output jac_g_x, at nonzero index 668 (row 182, col 121).") [.../casadi/core/oracle_function.cpp:408]
-CasADi - 2026-05-10 17:13:26 WARNING("solver:nlp_jac_g failed: NaN detected for output jac_g_x, at nonzero index 668 (row 182, col 121).") [.../casadi/core/oracle_function.cpp:408]
- Optimal cost (J):  -92710.9 
+## Conclusion
 
- Solved in 1353.384 ms
-         OCP transcription time  : 162.556 ms
-         NLP solution time       : 1190.828 ms
+The fuel comparison result indicates that hydrogen provides the best performance in this simulation condition.
 
- Post processed in 37.61 ms
-         Solution retrieval            : 0.227 ms
-         Process solution and plot      : 37.382 ms
+Final range ranking:
 
-==================== Result Summary ====================
-Model              : Hyunmoo-2B-class SRBM
-Fuel Type          : kerosene
-Gas ratio          : 0.30
-Final range        : 92.740 km
-Final altitude     : 0.000 m
-Terminal velocity  : 407.149 m/s
-Terminal gamma     : -10.000 deg
-Final mass         : 3137.042 kg
-Final time         : 120.000 s
-========================================================
-
-
-========== Trajectory Summary ==========
-Final time              : 120.000 s
-Final range             : 92.740 km
-Max altitude            : 7.809 km
-Terminal altitude       : 0.000 m
-Initial velocity        : 552.986 m/s
-Max velocity            : 1139.073 m/s
-Terminal velocity       : 407.149 m/s
-Initial mass            : 5400.000 kg
-Final mass              : 3137.042 kg
-Min gamma               : -10.000 deg
-Max gamma               : 30.000 deg
-Min alpha               : -2.000 deg
-Max alpha               : 2.000 deg
-Min throttle            : 0.240
-Max throttle            : 1.000
-========================================
+```text
+Hydrogen > Methane > Ethylene > Kerosene
