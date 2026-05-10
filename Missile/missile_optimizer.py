@@ -7,7 +7,7 @@ import casadi as ca
 # ============================================================
 # 선택 가능:
 # "ATACMS", "LORA", "HYUNMOO_2B", "TOCHKA"
-MODEL_NAME = "HYUNMOO_2B"
+MODEL_NAME = "TOCHKA"
 
 # 가스화연료 비율
 # 0.0이면 기존 고체로켓-only baseline에 가까움
