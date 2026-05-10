@@ -7,12 +7,17 @@ import casadi as ca
 # ============================================================
 # 선택 가능:
 # "ATACMS", "LORA", "HYUNMOO_2B", "TOCHKA"
-MODEL_NAME = "TOCHKA"
+MODEL_NAME = "HYUNMOO_2B"
 
 # 가스화연료 비율
 # 0.0이면 기존 고체로켓-only baseline에 가까움
 # 0.1~0.5 정도로 바꿔가며 사거리/종속도 비교
+# 연료 타입별 영향을 확인하려면 0.0이 아닌 값을 설정해야 함
 GAS_RATIO = 0.30
+
+# 연료 타입 선택
+# "hydrogen", "methane", "ethylene", "kerosene"
+FUEL_TYPE = "hydrogen"
 
 # 목적함수 선택
 # "range" 또는 "range_terminal_velocity"
@@ -45,6 +50,7 @@ MISSILE_DB = {
         "solid_burn_time": 28.0,        # s, 연구용 가정
         "max_altitude": 60000.0,        # m
         "max_velocity": 1800.0,         # m/s
+        #"max_q": 100000.0,              # Pa, dynamic pressure limit 연구용 가정
         "tf_min": 100.0,
         "tf_max": 350.0,
     },
@@ -63,6 +69,7 @@ MISSILE_DB = {
         "solid_burn_time": 32.0,
         "max_altitude": 60000.0,
         "max_velocity": 1800.0,
+        #"max_q": 100000.0,
         "tf_min": 100.0,
         "tf_max": 350.0,
     },
@@ -81,6 +88,7 @@ MISSILE_DB = {
         "solid_burn_time": 45.0,
         "max_altitude": 80000.0,
         "max_velocity": 2200.0,
+        #"max_q": 100000.0,
         "tf_min": 120.0,
         "tf_max": 600.0,
     },
@@ -99,6 +107,7 @@ MISSILE_DB = {
         "solid_burn_time": 25.0,
         "max_altitude": 40000.0,
         "max_velocity": 1700.0,
+        #"max_q": 100000.0,
         "tf_min": 80.0,
         "tf_max": 220.0,
     },
@@ -125,6 +134,21 @@ RAMJET_MAX_MACH = 5.5
 MASS_SMOOTH_WIDTH = 10.0
 MACH_SMOOTH_WIDTH = 0.15
 ALT_SMOOTH_WIDTH = 1000.0
+
+# 연료별 저위 발열량 LHV [J/kg]
+# 이 값으로 surrogate ramjet Isp를 계산
+FUEL_LHV = {
+    "hydrogen": 120.0e6,   # J/kg
+    "methane": 50.0e6,     # J/kg
+    "ethylene": 47.0e6,    # J/kg
+    "kerosene": 43.0e6,    # J/kg
+}
+
+# LHV 기반 램제트 Isp 계산 상수
+# 실제 램제트는 대기 공기 유입과 비행 에너지로 추가 성능을 얻으므로
+# 단순 연료 LHV만으로는 매우 낮게 나온다. 연구용 surrogate로 보정.
+RAMJET_LHV_EFFICIENCY = 0.70
+RAMJET_LHV_SCALE = 3.2
 
 
 # ============================================================
@@ -170,11 +194,13 @@ def gravity(h):
     return G0 * (R_EARTH / (R_EARTH + h)) ** 2
 
 
-def build_model_params(model_name, gas_ratio):
+def build_model_params(model_name, gas_ratio, fuel_type):
     """
     공개 제원 + 연구용 가정값으로 해석 파라미터 구성.
     gas_ratio:
         전체 추진제 중 가스화연료로 배분하는 비율
+    fuel_type:
+        연료 타입 ("hydrogen", "methane", "ethylene", "kerosene")
     """
     base = MISSILE_DB[model_name].copy()
 
@@ -200,6 +226,17 @@ def build_model_params(model_name, gas_ratio):
     # 실제 엔진 모델이 들어오면 이 부분을 Cantera/quasi-1D table로 대체
     ramjet_ref_thrust = 0.35 * solid_thrust * (0.7 + 0.6 * gas_ratio)
 
+    # 연료 LHV를 기반으로 램제트 equivalent Isp 계산
+    if fuel_type not in FUEL_LHV:
+        raise ValueError(f"Unknown fuel_type: {fuel_type}")
+
+    lhv = FUEL_LHV[fuel_type]
+    isp_ramjet = (
+        RAMJET_LHV_SCALE
+        * np.sqrt(2.0 * RAMJET_LHV_EFFICIENCY * lhv)
+        / G0
+    )
+
     base.update({
         "m0": m0,
         "dry_mass": dry_mass,
@@ -208,15 +245,18 @@ def build_model_params(model_name, gas_ratio):
         "gas_prop_mass": gas_prop_mass,
         "solid_ratio": solid_ratio,
         "gas_ratio": gas_ratio,
+        "fuel_type": fuel_type,
         "area": area,
         "solid_thrust": solid_thrust,
         "ramjet_ref_thrust": ramjet_ref_thrust,
+        "isp_ramjet": isp_ramjet,
+        "lhv": lhv,
     })
 
     return base
 
 
-def ramjet_efficiency_surrogate(mach, gas_ratio):
+def ramjet_efficiency_surrogate(mach, gas_ratio, lhv):
     """
     가스발생기 램제트 연소 효율 surrogate 모델.
     실제 연구에서는 이 함수를 논문 기반 quasi-1D / Cantera 결과 테이블로 대체하면 됨.
@@ -224,6 +264,7 @@ def ramjet_efficiency_surrogate(mach, gas_ratio):
     특징:
     - 특정 마하수 근처에서 효율이 좋아지는 형태
     - gas_ratio가 너무 낮거나 너무 높으면 효율이 떨어지는 형태
+    - 연료 LHV에 따라 램제트 연소 효율도 달라진다고 가정
     """
     mach_eff = 0.55 + 0.30 * ca.exp(-((mach - 3.2) / 1.1) ** 2)
 
@@ -231,7 +272,11 @@ def ramjet_efficiency_surrogate(mach, gas_ratio):
     ratio_eff = 1.0 - 0.8 * (gas_ratio - 0.40) ** 2
     ratio_eff = ca.fmax(0.65, ca.fmin(1.0, ratio_eff))
 
-    return mach_eff * ratio_eff
+    # 연료 LHV가 높을수록 램제트 화학/열역학 성능이 더 좋다고 가정
+    fuel_eff = ca.sqrt(lhv / FUEL_LHV["kerosene"])
+    fuel_eff = ca.fmax(0.80, ca.fmin(1.25, fuel_eff))
+
+    return mach_eff * ratio_eff * fuel_eff
 
 
 def propulsion_model(x, u, params):
@@ -264,7 +309,10 @@ def propulsion_model(x, u, params):
 
     solid_on = smooth_step(m - solid_boundary_mass, MASS_SMOOTH_WIDTH)
 
+    # 가스 연료가 있을 때만 ramjet 활성화
+    # GAS_RATIO = 0.0이면 ramjet은 완전히 비활성화됨
     gas_fuel_available = smooth_step(m - params["dry_mass"], MASS_SMOOTH_WIDTH)
+    has_gas_fuel = ca.fmin(1.0, params["gas_prop_mass"] * 1000.0)  # gas_prop_mass > 0.001 이면 1.0에 근접
     after_solid = 1.0 - solid_on
 
     # 램제트 작동 가능 조건: Mach, altitude gate
@@ -282,13 +330,14 @@ def propulsion_model(x, u, params):
         ALT_SMOOTH_WIDTH
     )
 
-    ramjet_on = after_solid * gas_fuel_available * mach_gate * altitude_gate
+    # 가스 연료가 있을 때만 ramjet 활성화
+    ramjet_on = has_gas_fuel * after_solid * gas_fuel_available * mach_gate * altitude_gate
 
     # 고체로켓 추력
     T_solid = solid_on * params["solid_thrust"]
 
     # 램제트 surrogate 추력
-    eta_ram = ramjet_efficiency_surrogate(mach, params["gas_ratio"])
+    eta_ram = ramjet_efficiency_surrogate(mach, params["gas_ratio"], params["lhv"])
 
     # 고도 증가에 따른 밀도 감소 효과를 약하게 반영
     density_ratio = ca.fmax(0.05, rho / RHO0)
@@ -392,11 +441,22 @@ def create_ocp(params):
     ocp.terminal_constraints[0] = lambda xf, tf, x0, t0: [xf[1]]
 
     # ---------------------------
+    # Running cost: control effort 및 고도 비용 추가
+    # ---------------------------
+    ocp.running_costs[0] = lambda x, u, t: (
+        1e-4 * u[0] ** 2
+        + 1e-5 * u[1] ** 2
+        + 1e-8 * x[1] ** 2
+        + 1e-2 * x[3] ** 2
+        + 1e-4 * ca.fmax(0.0, 50.0 - x[1]) ** 2
+    )
+
+    # ---------------------------
     # 초기 조건
     # ---------------------------
     # 지표면 근처에서 초기 속도를 조금 부여한 상태로 시작
     # 너무 낮은 속도 0에서 시작하면 gamma dynamics의 v 분모 때문에 solver가 어려워질 수 있음
-    initial_gamma_deg = 45.0
+    initial_gamma_deg = 30.0
 
     # 초기 속도를 더 현실적으로 설정 (고체로켓 boost 후 진입 속도 가정)
     v0_estimate = params["solid_thrust"] / params["m0"] * params["solid_burn_time"] / 1.8
@@ -411,6 +471,15 @@ def create_ocp(params):
     ]
 
     # ---------------------------
+    # 초기 제어값 (모든 연료 타입에서 동일하게 설정)
+    # u = [alpha, throttle]
+    # ---------------------------
+    ocp.u00[0] = [
+        0.0,    # alpha0 = 0 rad (초기에는 수평)
+        0.0,    # throttle0 = 0 (고체로켓만 작동)
+    ]
+
+    # ---------------------------
     # 상태변수 bounds
     # x = [R, h, v, gamma, m]
     # ---------------------------
@@ -418,7 +487,7 @@ def create_ocp(params):
         0.0,
         0.0,
         10.0,
-        np.radians(-45.0),  # 더 제한된 gamma 범위
+        np.radians(-10.0),  # 실제 비행 경로에 가까운 gamma 범위
         params["dry_mass"],
     ]
 
@@ -426,7 +495,7 @@ def create_ocp(params):
         max(3.0 * params["public_range"], 200e3),
         params["max_altitude"],
         params["max_velocity"],
-        np.radians(60.0),   # 더 제한된 gamma 범위
+        np.radians(25.0),   # 실제 비행 경로에 가까운 gamma 범위
         params["m0"],
     ]
 
@@ -435,14 +504,16 @@ def create_ocp(params):
     # u = [alpha, throttle]
     # ---------------------------
     ocp.lbu[0] = [
-        np.radians(-5.0),  # alpha lower
+        np.radians(-2.0),  # alpha lower - 더 현실적이고 안정적으로
         0.0,               # throttle lower
     ]
 
     ocp.ubu[0] = [
-        np.radians(5.0),   # alpha upper
+        np.radians(2.0),   # alpha upper - 더 현실적이고 안정적으로
         1.0,               # throttle upper
     ]
+
+
 
     # ---------------------------
     # 시간 bounds
@@ -473,12 +544,15 @@ def extract_solution_data(post):
 # ============================================================
 # 7. 단일 모델 실행 함수
 # ============================================================
-def solve_one_model(model_name, gas_ratio, plot=True):
-    params = build_model_params(model_name, gas_ratio)
+def solve_one_model(model_name, gas_ratio, fuel_type, plot=True):
+    if gas_ratio == 0.0:
+        print("\n[Warning] GAS_RATIO is 0.0: fuel_type will not affect trajectory because ramjet fuel is disabled.")
+    params = build_model_params(model_name, gas_ratio, fuel_type)
 
     print("\n============================================================")
     print(f"Selected Model : {params['name']}")
     print(f"Propulsion     : {params['propulsion']}")
+    print(f"Fuel Type      : {params['fuel_type']}")
     print(f"Length         : {params['length']:.3f} m")
     print(f"Diameter       : {params['diameter']:.3f} m")
     print(f"Launch mass    : {params['m0']:.1f} kg")
@@ -489,11 +563,12 @@ def solve_one_model(model_name, gas_ratio, plot=True):
     print(f"Area           : {params['area']:.4f} m^2")
     print(f"Solid thrust   : {params['solid_thrust']:.1f} N")
     print(f"Ramjet T_ref   : {params['ramjet_ref_thrust']:.1f} N")
+    print(f"Ramjet LHV     : {params['lhv'] / 1e6:.2f} MJ/kg")
+    print(f"Ramjet Isp     : {params['isp_ramjet']:.1f} s")
     print("============================================================\n")
 
     ocp = create_ocp(params)
 
-    # 기존 코드와 동일하게 mpopt solver 사용
     n_segments = 20  # 최적화 속도 개선: 40 → 20
     poly_orders = [3] * n_segments
 
@@ -504,7 +579,19 @@ def solve_one_model(model_name, gas_ratio, plot=True):
         scheme="LGR"
     )
 
-    solution = mpo.solve()
+    # Solver tolerance 강화: 수치 안정성 개선
+    # 기본값보다 엄격한 tolerance로 설정하여 수렴성 개선
+    solution = mpo.solve(
+        ipopt_options={
+            "tol": 1e-7,                    # 주 tolerance
+            "constr_viol_tol": 1e-7,       # 제약 위반 tolerance
+            "dual_inf_tol": 1e-7,          # Dual infeasibility tolerance
+            "compl_inf_tol": 1e-7,         # Complementarity infeasibility
+            "max_iter": 1500,              # 최대 반복 횟수 증가
+            "acceptable_tol": 1e-6,        # Acceptable tolerance (빠른 수렴용)
+            "acceptable_constr_viol_tol": 1e-6,
+        }
+    )
 
     post = mpo.process_results(
         solution,
@@ -521,6 +608,7 @@ def solve_one_model(model_name, gas_ratio, plot=True):
 
     print("\n==================== Result Summary ====================")
     print(f"Model              : {params['name']}")
+    print(f"Fuel Type          : {params['fuel_type']}")
     print(f"Gas ratio          : {params['gas_ratio']:.2f}")
     print(f"Final range        : {xf[0] / 1000.0:.3f} km")
     print(f"Final altitude     : {xf[1]:.3f} m")
@@ -655,23 +743,32 @@ def plot_trajectory_results(x_data, u_data, t_data, save_path=None):
 if __name__ == "__main__":
     import datetime
     
-    params, solution, post, x_data, u_data, t_data = solve_one_model(
-        MODEL_NAME,
-        GAS_RATIO,
-        plot=PLOT_RESULT
-    )
-
-    # 커스텀 플롯 표시 및 저장 (PLOT_RESULT가 True일 때)
-    if PLOT_RESULT:
-        # 결과 저장 경로
-        save_dir = "TOCHKA_Plot"
-        import os
-        if not os.path.exists(save_dir):
-            os.makedirs(save_dir)
+    # 여러 연료 타입으로 테스트
+    fuel_types = ["hydrogen", "methane", "ethylene", "kerosene"]
+    
+    for fuel in fuel_types:
+        print(f"\n{'='*60}")
+        print(f"Testing with Fuel: {fuel.upper()}")
+        print(f"{'='*60}")
         
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        save_path = os.path.join(save_dir, f"trajectory_{MODEL_NAME}_{GAS_RATIO:.2f}_{timestamp}")
+        params, solution, post, x_data, u_data, t_data = solve_one_model(
+            MODEL_NAME,
+            GAS_RATIO,
+            fuel,
+            plot=PLOT_RESULT
+        )
         
-        plot_trajectory_results(x_data, u_data, t_data, save_path=save_path)
+        # 커스텀 플롯 표시 및 저장 (PLOT_RESULT가 True일 때)
+        if PLOT_RESULT:
+            # 결과 저장 경로
+            save_dir = f"{MODEL_NAME}_Plot"
+            import os
+            if not os.path.exists(save_dir):
+                os.makedirs(save_dir)
+            
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            save_path = os.path.join(save_dir, f"trajectory_{MODEL_NAME}_{fuel}_{GAS_RATIO:.2f}_{timestamp}")
+            
+            plot_trajectory_results(x_data, u_data, t_data, save_path=save_path)
     
     mp.plt.show()
