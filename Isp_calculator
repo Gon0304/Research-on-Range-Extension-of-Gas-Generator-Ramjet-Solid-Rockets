@@ -1,0 +1,379 @@
+# =============================================================
+# Isp Calculator — Brayton Cycle (Air-Breathing Ramjet)
+# GG Ramjet Capstone
+#
+# 계산 흐름 (브레이튼 사이클):
+#   State 1: 비행 조건 (USSA1976 대기 모델)
+#   State 2: 램 압축 (등엔트로픽, 이상 압력 회수)
+#   State 3: 정압 연소 (LHV 투입, stoichiometric, 평균-cp 반복 수렴)
+#   State 4: 노즐 팽창 (등엔트로픽, pe = P_ambient)
+#   Isp = [(1+f)*ve - v_flight] / (f * g0)   [연료 질량 기준]
+#
+# 출력: 연료별 시트 (2D Isp 테이블: 행=고도, 열=마하수)
+#       + 연료 물성 요약 테이블 (하단)
+#
+# 참고문헌:
+#   - LHV:
+#       Hydrogen, Methane, Kerosene → TABLE A-27 (Cengel & Boles)
+#                                       Kerosene는 Light diesel 근사
+#       Ethylene → Heywood, Internal Combustion Engine Fundamentals
+#                  (Springer Appendix, 47,132 kJ/kg)  ※ 테이블 미수록
+#   - cp(T) 데이터:
+#       `thermo` Python 패키지 (NASA-7/DIPPR 기반 내장 데이터)
+#       유효범위 ~60~2000 K, 그 이상은 패키지 내부 외삽
+#       → Kyle 테이블 1800 K 상한 문제 해소
+#   - 대기 모델: USSA1976 (ambiance 패키지)
+#   - Isp 공식: TUM 3characteristics.pdf (Idealized thermal rocket)
+# =============================================================
+
+import numpy as np
+from thermo import Chemical
+from ambiance import Atmosphere
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
+
+# -------------------------------------------------------------
+# 상수
+# -------------------------------------------------------------
+Ru        = 8.314      # J/mol·K  (= kJ/kmol·K)
+g0        = 9.81       # m/s^2
+GAMMA_AIR = 1.4
+R_N2_O2   = 79 / 21    # 공기 중 N2/O2 몰비 = 3.762
+
+# -------------------------------------------------------------
+# 종 데이터  (Chemical 객체 한 번만 생성하고 재사용)
+# -------------------------------------------------------------
+SPECIES_THERMO = {
+    'H2O': Chemical('water'),
+    'CO2': Chemical('carbon dioxide'),
+    'N2':  Chemical('nitrogen'),
+}
+M_SPECIES = {'H2O': 18.015, 'CO2': 44.01, 'N2': 28.014}   # kg/kmol
+
+def cp_species_J_per_molK(sp: str, T: float) -> float:
+    """thermo 패키지에서 단일 종 cp [J/mol·K] = [kJ/kmol·K]"""
+    return SPECIES_THERMO[sp].HeatCapacityGas.T_dependent_property(T)
+
+# -------------------------------------------------------------
+# 연료 데이터 (공기 산화제, stoichiometric)
+# -------------------------------------------------------------
+FUELS = {
+    'H2': {
+        'LHV':    120_000,   # kJ/kg_fuel  (TABLE A-27)
+        'M_fuel': 2.016,
+        # H2 + 0.5 O2 + 1.881 N2 → H2O + 1.881 N2
+        'O2_mol': 0.5,
+        'products': {'H2O': 1.0,  'CO2': 0.0, 'N2': 0.5  * R_N2_O2},
+    },
+    'CH4': {
+        'LHV':    50_050,    # kJ/kg_fuel  (TABLE A-27)
+        'M_fuel': 16.043,
+        # CH4 + 2 O2 + 7.524 N2 → CO2 + 2H2O + 7.524 N2
+        'O2_mol': 2.0,
+        'products': {'H2O': 2.0,  'CO2': 1.0, 'N2': 2.0  * R_N2_O2},
+    },
+    'C2H4': {
+        'LHV':    47_132,    # kJ/kg_fuel  (Heywood/Springer, 문헌 보완)
+        'M_fuel': 28.054,
+        # C2H4 + 3 O2 + 11.286 N2 → 2CO2 + 2H2O + 11.286 N2
+        'O2_mol': 3.0,
+        'products': {'H2O': 2.0,  'CO2': 2.0, 'N2': 3.0  * R_N2_O2},
+    },
+    'Kerosene': {
+        'LHV':    43_200,    # kJ/kg_fuel  (TABLE A-27, Light diesel 근사)
+        'M_fuel': 170.0,     # C12H26 기준
+        # C12H26 + 18.5 O2 + 69.6 N2 → 12CO2 + 13H2O + 69.6 N2
+        'O2_mol': 18.5,
+        'products': {'H2O': 13.0, 'CO2': 12.0, 'N2': 18.5 * R_N2_O2},
+    },
+}
+
+# -------------------------------------------------------------
+# 스윕 범위
+# -------------------------------------------------------------
+M_RANGE = np.arange(1.5, 6.01, 0.1)            # 마하 1.5 ~ 6.0  (step 0.1)
+H_RANGE = np.arange(20_000, 70_001, 2_000)     # 고도 20 ~ 70 km (step 2 km)
+M_REF, H_REF = 3.0, 30_000                     # 요약 테이블 기준 조건
+
+# -------------------------------------------------------------
+# 혼합 물성
+# -------------------------------------------------------------
+def mix_props(products: dict, T: float):
+    """
+    생성물 혼합 cp, M_mix, gamma 반환
+    cp_mix [kJ/kg·K], M_mix [kg/kmol], gamma [-]
+    """
+    active = {sp: n for sp, n in products.items() if n > 0}
+    n_tot  = sum(active.values())
+    y      = {sp: n / n_tot for sp, n in active.items()}   # 몰 분율
+
+    cp_bar = sum(y[sp] * cp_species_J_per_molK(sp, T) for sp in active)  # kJ/kmol·K
+    M_mix  = sum(y[sp] * M_SPECIES[sp] for sp in active)
+
+    cp     = cp_bar / M_mix                # kJ/kg·K
+    cv     = cp - Ru / M_mix
+    gamma  = cp / cv
+
+    return cp, M_mix, gamma
+
+# -------------------------------------------------------------
+# 연소실 온도 T3 (평균 cp 반복 수렴)
+# -------------------------------------------------------------
+def solve_T3(T2: float, f: float, fuel: dict,
+             tol=0.5, max_iter=20) -> float:
+    """
+    에너지 보존:
+      (1+f)·cp_mix·(T3 - T2) = f·LHV
+    cp_mix가 T 의존이므로 T_avg = (T2+T3)/2 기준 평균값으로 반복
+    """
+    T3 = T2 + 2000.0  # 초기 추정값
+    for _ in range(max_iter):
+        T_avg = 0.5 * (T2 + T3)
+        cp, _, _ = mix_props(fuel['products'], T_avg)
+        T3_new = T2 + f * fuel['LHV'] / ((1 + f) * cp)
+        if abs(T3_new - T3) < tol:
+            return T3_new
+        T3 = T3_new
+    return T3
+
+# -------------------------------------------------------------
+# 브레이튼 사이클 Isp (단일 조건)
+# -------------------------------------------------------------
+def brayton_Isp(fuel_name: str, M: float, h: float):
+    fuel = FUELS[fuel_name]
+    atm  = Atmosphere(h)
+    T1   = float(atm.temperature[0])
+    P1   = float(atm.pressure[0])
+    a1   = float(atm.speed_of_sound[0])
+    v1   = M * a1                                      # 비행 속도 [m/s]
+
+    # ── State 2: 램 압축 ───────────────────────────────────────
+    T2 = T1 * (1 + (GAMMA_AIR - 1) / 2 * M**2)
+    P2 = P1 * (T2 / T1) ** (GAMMA_AIR / (GAMMA_AIR - 1))
+
+    # ── 연료-공기 질량비 ──────────────────────────────────────
+    n_O2  = fuel['O2_mol']
+    n_N2  = n_O2 * R_N2_O2
+    m_air = n_O2 * 32.0 + n_N2 * 28.014                # kg/kmol_fuel
+    AF    = m_air / fuel['M_fuel']                     # stoich air/fuel (mass)
+    f     = 1.0 / AF                                   # fuel/air (mass)
+
+    # ── State 3: 정압 연소 (T3 수렴) ─────────────────────────
+    T3 = solve_T3(T2, f, fuel)
+
+    # ── State 4: 노즐 팽창 (pe = P1) ─────────────────────────
+    cp3, M_mix3, gamma3 = mix_props(fuel['products'], T3)
+
+    pe_pc = P1 / P2                                     # < 1
+    R_specific = Ru * 1000 / M_mix3                     # J/kg·K  (Ru: kJ/kmol·K → J/kmol·K)
+    ve = np.sqrt(
+        2 * gamma3 / (gamma3 - 1)
+        * R_specific * T3
+        * (1 - pe_pc ** ((gamma3 - 1) / gamma3))
+    )
+
+    # ── Isp (연료 기준) ───────────────────────────────────────
+    net = (1 + f) * ve - v1
+    Isp = net / (f * g0) if net > 0 else np.nan
+
+    return {
+        'Isp': Isp, 'T2': T2, 'T3': T3, 've': ve,
+        'gamma': gamma3, 'M_mix': M_mix3, 'AF': AF, 'f': f,
+        'P2_P1': P2 / P1, 'v_flight': v1,
+    }
+
+# -------------------------------------------------------------
+# 2D 스윕
+# -------------------------------------------------------------
+def sweep(fuel_name: str) -> np.ndarray:
+    n_h, n_M = len(H_RANGE), len(M_RANGE)
+    arr = np.full((n_h, n_M), np.nan)
+    for i, h in enumerate(H_RANGE):
+        for j, M in enumerate(M_RANGE):
+            try:
+                res = brayton_Isp(fuel_name, float(M), float(h))
+                if not np.isnan(res['Isp']):
+                    arr[i, j] = round(res['Isp'], 1)
+            except Exception:
+                pass
+    return arr
+
+# -------------------------------------------------------------
+# 엑셀 스타일
+# -------------------------------------------------------------
+def header_style(bg_hex: str, font_color='FFFFFF'):
+    return (
+        PatternFill('solid', start_color=bg_hex, end_color=bg_hex),
+        Font(bold=True, color=font_color, name='Arial', size=10),
+        Alignment(horizontal='center', vertical='center'),
+    )
+
+def thin_border():
+    s = Side(style='thin', color='AAAAAA')
+    return Border(left=s, right=s, top=s, bottom=s)
+
+FUEL_COLORS = {
+    'H2':       '1F497D',
+    'CH4':      '2E7D32',
+    'C2H4':     '6A1E6E',
+    'Kerosene': '8B3A00',
+}
+
+def heatmap_color(val, vmin, vmax):
+    if np.isnan(val):
+        return 'DDDDDD'
+    t = max(0.0, min(1.0, (val - vmin) / (vmax - vmin + 1e-9)))
+    r = int(0xDD + t * (0xFF - 0xDD))
+    g = int(0xEE + t * (0x44 - 0xEE))
+    b = int(0xFF + t * (0x44 - 0xFF))
+    return f'{r:02X}{g:02X}{b:02X}'
+
+# -------------------------------------------------------------
+# 시트 작성
+# -------------------------------------------------------------
+def write_sheet(wb: Workbook, fuel_name: str, isp_arr: np.ndarray):
+    ws    = wb.create_sheet(title=fuel_name)
+    color = FUEL_COLORS[fuel_name]
+    fill_h, font_h, align_c = header_style(color)
+
+    M_labels = [f'{m:.1f}' for m in M_RANGE]
+    h_labels = [f'{int(h/1000)} km' for h in H_RANGE]
+
+    # ── 제목 ──────────────────────────────────────────────────
+    n_cols = len(M_RANGE) + 1
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=n_cols)
+    title = ws.cell(row=1, column=1,
+        value=(f'Isp [s]  —  {fuel_name}  |  Brayton Cycle  |  '
+               f'Stoichiometric (φ=1)  |  Air-breathing  |  pe = P_ambient'))
+    title.font  = Font(bold=True, name='Arial', size=11, color='FFFFFF')
+    title.fill  = PatternFill('solid', start_color=color, end_color=color)
+    title.alignment = Alignment(horizontal='center', vertical='center')
+    ws.row_dimensions[1].height = 22
+
+    # ── 헤더 (마하 라벨) ──────────────────────────────────────
+    c00 = ws.cell(row=2, column=1, value='Alt \\ Mach')
+    c00.font = font_h; c00.fill = fill_h; c00.alignment = align_c
+    for j, label in enumerate(M_labels):
+        c = ws.cell(row=2, column=j + 2, value=label)
+        c.font = font_h; c.fill = fill_h; c.alignment = align_c
+
+    # ── 본문 ──────────────────────────────────────────────────
+    vmin = np.nanmin(isp_arr)
+    vmax = np.nanmax(isp_arr)
+
+    for i, h_lbl in enumerate(h_labels):
+        row = i + 3
+        lc  = ws.cell(row=row, column=1, value=h_lbl)
+        lc.font  = Font(bold=True, name='Arial', size=10, color='FFFFFF')
+        lc.fill  = PatternFill('solid', start_color=color, end_color=color)
+        lc.alignment = Alignment(horizontal='center', vertical='center')
+
+        for j in range(len(M_RANGE)):
+            val = isp_arr[i, j]
+            dc  = ws.cell(row=row, column=j + 2)
+            if not np.isnan(val):
+                dc.value = val
+                dc.number_format = '0.0'
+            else:
+                dc.value = '—'
+            hex_c = heatmap_color(val, vmin, vmax)
+            dc.fill = PatternFill('solid', start_color=hex_c, end_color=hex_c)
+            dc.font = Font(name='Arial', size=9)
+            dc.alignment = Alignment(horizontal='center')
+            dc.border = thin_border()
+
+    # ── 컬럼 너비 ────────────────────────────────────────────
+    ws.column_dimensions['A'].width = 9
+    for j in range(len(M_RANGE)):
+        ws.column_dimensions[get_column_letter(j + 2)].width = 6.5
+
+    # ── 요약 테이블 (기준 조건에서의 상태량) ────────────────
+    ref = brayton_Isp(fuel_name, M_REF, H_REF)
+    fuel = FUELS[fuel_name]
+
+    summary = [
+        ('Property',                 'Value',                'Unit / Note'),
+        ('LHV',                      fuel['LHV'],            'kJ/kg_fuel'),
+        ('M_fuel',                   fuel['M_fuel'],         'kg/kmol'),
+        ('AF_stoich (air/fuel)',     round(ref['AF'], 3),    '— (mass basis)'),
+        ('f_stoich (fuel/air)',      round(ref['f'], 5),     '— (mass basis)'),
+        ('M_mix products',           round(ref['M_mix'], 3), 'kg/kmol'),
+        ('—', '', f'— Reference @ M={M_REF}, h={H_REF//1000} km —'),
+        ('T2 (after ram comp.)',     round(ref['T2'], 1),    'K'),
+        ('P2/P1 (ram pressure)',     round(ref['P2_P1'], 2), '—'),
+        ('T3 (combustor exit)',      round(ref['T3'], 1),    'K'),
+        ('gamma (products @ T3)',    round(ref['gamma'], 4), '—'),
+        ('ve (nozzle exit)',         round(ref['ve'], 1),    'm/s'),
+        ('v_flight',                 round(ref['v_flight'], 1), 'm/s'),
+        ('Isp',                      round(ref['Isp'], 2),   's'),
+    ]
+
+    row_start = len(H_RANGE) + 4
+    fill_s, font_s, align_s = header_style(color)
+    fill_light = PatternFill('solid', start_color='EEF4FF', end_color='EEF4FF')
+
+    for k, (prop, val, unit) in enumerate(summary):
+        r = row_start + k
+        for col_idx, txt in enumerate([prop, val, unit], start=1):
+            c = ws.cell(row=r, column=col_idx, value=txt)
+            c.border = thin_border()
+            c.alignment = Alignment(
+                horizontal='left' if col_idx == 1 else 'center',
+                vertical='center')
+            c.font = Font(name='Arial', size=10)
+            if k == 0:
+                c.fill = fill_s; c.font = font_s; c.alignment = align_s
+            elif prop == '—':
+                c.fill = PatternFill('solid', start_color=color, end_color=color)
+                c.font = Font(name='Arial', size=10, italic=True,
+                              color='FFFFFF', bold=True)
+                c.alignment = Alignment(horizontal='center')
+            else:
+                c.fill = fill_light
+        ws.row_dimensions[r].height = 16
+
+    ws.column_dimensions['A'].width = 28
+    ws.column_dimensions['B'].width = 16
+    ws.column_dimensions['C'].width = 36
+
+    # ── 주석 ──────────────────────────────────────────────────
+    note_row = row_start + len(summary) + 1
+    nc = ws.cell(row=note_row, column=1,
+        value=('※ NaN(—): 순추력 음수 조건 (ve < v_flight)  |  '
+               'cp(T): thermo 패키지 (NASA-7/DIPPR 기반)  |  '
+               '대기: USSA1976  |  φ=1 stoichiometric, ideal nozzle'))
+    nc.font = Font(name='Arial', size=9, italic=True, color='666666')
+    ws.merge_cells(start_row=note_row, start_column=1,
+                   end_row=note_row,   end_column=12)
+
+
+# -------------------------------------------------------------
+# 메인
+# -------------------------------------------------------------
+if __name__ == '__main__':
+    print('=' * 64)
+    print('  Brayton Cycle Isp Calculator — 2D Sweep (M × h)')
+    print(f'  M range : {M_RANGE[0]:.1f} ~ {M_RANGE[-1]:.1f}   (step 0.1)')
+    print(f'  h range : {int(H_RANGE[0]/1000)} ~ {int(H_RANGE[-1]/1000)} km '
+          f'(step {int((H_RANGE[1]-H_RANGE[0])/1000)} km)')
+    print(f'  cp(T)   : thermo pkg (NASA-7/DIPPR)')
+    print('=' * 64)
+
+    wb = Workbook()
+    wb.remove(wb.active)
+
+    for fuel_name in FUELS:
+        print(f'\n[{fuel_name}] 스윕 중...')
+        arr = sweep(fuel_name)
+        write_sheet(wb, fuel_name, arr)
+
+        valid = arr[~np.isnan(arr)]
+        nan_cnt = int(np.isnan(arr).sum())
+        print(f'  Isp 범위: {valid.min():.0f} ~ {valid.max():.0f} s   '
+              f'(유효 {valid.size}셀, NaN {nan_cnt}셀)')
+
+    out_path = 'Isp_results.xlsx'
+    wb.save(out_path)
+    print(f'\n✓  "{out_path}"  저장 완료')
+    print('=' * 64)
