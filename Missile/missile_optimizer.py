@@ -171,18 +171,104 @@ def smooth_gate_between(value, low, high, width):
 
 def get_atmosphere(h):
     """
-    간단한 지수 대기 모델.
+    US Standard Atmosphere 1976 기반 층별 대기 모델.
+    CasADi 호환 버전.
+
     h: altitude [m]
     return:
         rho: air density [kg/m^3]
         a: speed of sound [m/s]
     """
-    h_safe = ca.fmax(h, 0.0)
+    h_safe = ca.fmax(0.0, ca.fmin(h, 84000.0))
 
-    rho = RHO0 * ca.exp(-h_safe / 7400.0)
+    gamma_air = 1.4
+    R_air = 287.05
+    g0 = 9.80665
 
-    # 고도 11 km 이하에서는 음속 감소, 이후에는 단순 상수 가정
-    a = ca.if_else(h_safe < 11000.0, 340.0 - 0.004 * h_safe, 295.0)
+    # base altitude [m]
+    h_b = [
+        0.0,
+        11000.0,
+        20000.0,
+        32000.0,
+        47000.0,
+        51000.0,
+        71000.0,
+        84000.0,
+    ]
+
+    # base temperature [K]
+    T_b = [
+        288.15,
+        216.65,
+        216.65,
+        228.65,
+        270.65,
+        270.65,
+        214.65,
+        186.946,
+    ]
+
+    # base pressure [Pa]
+    P_b = [
+        101325.0,
+        22632.06,
+        5474.889,
+        868.0187,
+        110.9063,
+        66.93887,
+        3.956420,
+        0.3734,
+    ]
+
+    # lapse rate [K/m]
+    L_b = [
+        -0.0065,
+        0.0,
+        0.001,
+        0.0028,
+        0.0,
+        -0.0028,
+        -0.002,
+        0.0,
+    ]
+
+    def layer_atmosphere(hh, hb, Tb, Pb, Lb):
+        T = Tb + Lb * (hh - hb)
+
+        P_gradient = Pb * (T / Tb) ** (-g0 / (Lb * R_air))
+        P_iso = Pb * ca.exp(-g0 * (hh - hb) / (R_air * Tb))
+
+        P = ca.if_else(ca.fabs(Lb) > 1e-12, P_gradient, P_iso)
+
+        rho = P / (R_air * T)
+        a = ca.sqrt(gamma_air * R_air * T)
+
+        return rho, a
+
+    rho = 0.0
+    a = 0.0
+    gate_sum = 0.0
+
+    for i in range(len(h_b) - 1):
+        in_layer = smooth_gate_between(h_safe, h_b[i], h_b[i + 1], 100.0)
+        rho_i, a_i = layer_atmosphere(h_safe, h_b[i], T_b[i], P_b[i], L_b[i])
+
+        rho += in_layer * rho_i
+        a += in_layer * a_i
+        gate_sum += in_layer
+
+    # 경계 부근에서 gate_sum이 너무 작아지는 경우 방지
+    rho_fallback, a_fallback = layer_atmosphere(
+        h_safe,
+        h_b[0],
+        T_b[0],
+        P_b[0],
+        L_b[0],
+    )
+
+    rho = ca.if_else(gate_sum > 1e-6, rho / gate_sum, rho_fallback)
+    a = ca.if_else(gate_sum > 1e-6, a / gate_sum, a_fallback)
 
     return rho, a
 
