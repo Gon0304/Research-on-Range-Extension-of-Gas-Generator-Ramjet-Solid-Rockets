@@ -234,12 +234,19 @@ def get_atmosphere(h):
     ]
 
     def layer_atmosphere(hh, hb, Tb, Pb, Lb):
-        T = Tb + Lb * (hh - hb)
-
-        P_gradient = Pb * (T / Tb) ** (-g0 / (Lb * R_air))
-        P_iso = Pb * ca.exp(-g0 * (hh - hb) / (R_air * Tb))
-
-        P = ca.if_else(ca.fabs(Lb) > 1e-12, P_gradient, P_iso)
+        """
+        One atmospheric layer calculation.
+        Lb = 0 인 등온층에서는 gradient 식을 계산하면 0으로 나누기 오류가 나므로
+        Python if문으로 먼저 분기 처리한다.
+        """
+        if abs(Lb) < 1e-12:
+            # Isothermal layer
+            T = Tb
+            P = Pb * ca.exp(-g0 * (hh - hb) / (R_air * Tb))
+        else:
+            # Gradient layer
+            T = Tb + Lb * (hh - hb)
+            P = Pb * (T / Tb) ** (-g0 / (Lb * R_air))
 
         rho = P / (R_air * T)
         a = ca.sqrt(gamma_air * R_air * T)
